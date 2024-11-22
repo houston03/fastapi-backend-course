@@ -2,18 +2,120 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-@app.get("/tasks")
+class Order:
+    TAX_RATE = 0.08  # 8% налог
+    SERVICE_CHARGE = 0.05  # 5% сервисный сбор
+
+    def __init__(self, customer):
+        self.customer = customer
+        self.dishes = []
+
+    def add_dish(self, dish):
+        if isinstance(dish, Dish):
+            self.dishes.append(dish)
+        else:
+            raise ValueError("Можно добавлять только объекты класса Dish.")
+
+    def remove_dish(self, dish):
+        if dish in self.dishes:
+            self.dishes.remove(dish)
+        else:
+            raise ValueError("Такого блюда нет в заказе.")
+
+    def calculate_total(self):
+        return sum(dish.price for dish in self.dishes)
+
+    def final_total(self):
+        total_after_discount = self.apply_discount()
+        total_with_tax = total_after_discount * (1 + Order.TAX_RATE)
+        final_total = total_with_tax * (1 + Order.SERVICE_CHARGE)
+        return final_total
+
+    def apply_discount(self):
+        discount_rate = self.customer.get_discount() / 100
+        return self.calculate_total() * (1 - discount_rate)
+
+    def __str__(self):
+        dish_list = "\n".join([str(dish) for dish in self.dishes])
+        return f"Order for {self.customer.name}:\n{dish_list}\nTotal: ${self.final_total():.2f}"
+
+
+class GroupOrder(Order):
+    def __init__(self, customers):
+        super().__init__(customer=None)  # Групповой заказ не привязан к одному клиенту
+        self.customers = customers
+
+    def split_bill(self):
+        if not self.customers:
+            raise ValueError("Нет клиентов для разделения счета.")
+        total = self.final_total()
+        return total / len(self.customers)
+
+    def __str__(self):
+        customer_list = ", ".join([customer.name for customer in self.customers])
+        dish_list = "\n".join([str(dish) for dish in self.dishes])
+        return f"Group Order for {customer_list}:\n{dish_list}\nTotal: ${self.final_total():.2f}"
+
+
+class Dish:
+    def __init__(self, name, price, category):
+        self.name = name
+        self.price = price
+        self.category = category
+
+    def __str__(self):
+        return f"Dish: {self.name}, Category: {self.category}, Price: ${self.price:.2f}"
+
+
+class Customer:
+    def __init__(self, name, membership="Regular"):
+        self.name = name
+        self.membership = membership
+
+    def get_discount(self):
+        if self.membership == "VIP":
+            return 10  # VIP клиенты получают 10% скидки
+        return 0  # Обычные клиенты не получают скидки
+
+    def __str__(self):
+        return f"Customer: {self.name}, Membership: {self.membership}"
+
+
+class Task:
+    id: UUID
+    title: str
+    status: str = "open"
+
+tasks = []
+
+@app.get("/tasks", response_model=List[Task])
 def get_tasks():
-    pass
+    return tasks
 
-@app.post("/tasks")
-def create_task(task):
-    pass
 
-@app.put("/tasks/{task_id}")
-def update_task(task_id: int):
-    pass
+@app.post("/tasks", response_model=Task, status_code=201)
+def create_task(title: str):
+    new_task = Task(id=uuid4(), title=title)
+    tasks.append(new_task)
+    return new_task
+
+
+@app.put("/tasks/{task_id}", response_model=Task)
+def update_task(task_id: UUID, title: Optional[str] = None, status: Optional[str] = None):
+    for i, task in enumerate(tasks):
+        if task.id == task_id:
+            if title is not None:
+                tasks[i].title = title
+            if status is not None:
+                tasks[i].status = status
+            return tasks[i]
+    raise HTTPException(status_code=404, detail="Task not found")
+
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: int):
-    pass
+def delete_task(task_id: UUID):
+    for i, task in enumerate(tasks):
+        if task.id == task_id:
+            del tasks[i]
+            return {"message": "Task deleted"}
+    raise HTTPException(status_code=404, detail="Task not found")
