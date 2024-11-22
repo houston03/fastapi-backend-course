@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from uuid import UUID, uuid4
+from typing import List
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
@@ -38,6 +41,9 @@ class Order:
     def __str__(self):
         dish_list = "\n".join([str(dish) for dish in self.dishes])
         return f"Order for {self.customer.name}:\n{dish_list}\nTotal: ${self.final_total():.2f}"
+
+
+
 
 
 class GroupOrder(Order):
@@ -80,35 +86,28 @@ class Customer:
     def __str__(self):
         return f"Customer: {self.name}, Membership: {self.membership}"
 
+tasks = []
 
-class Task:
-    id: UUID
+class Task(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
     title: str
     status: str = "open"
-
-tasks = []
 
 @app.get("/tasks", response_model=List[Task])
 def get_tasks():
     return tasks
 
-
 @app.post("/tasks", response_model=Task, status_code=201)
-def create_task(title: str):
-    new_task = Task(id=uuid4(), title=title)
-    tasks.append(new_task)
-    return new_task
-
+def create_task(task: Task):
+    tasks.append(task)
+    return task
 
 @app.put("/tasks/{task_id}", response_model=Task)
-def update_task(task_id: UUID, title: Optional[str] = None, status: Optional[str] = None):
+def update_task(task_id: UUID, updated_task: Task):
     for i, task in enumerate(tasks):
         if task.id == task_id:
-            if title is not None:
-                tasks[i].title = title
-            if status is not None:
-                tasks[i].status = status
-            return tasks[i]
+            tasks[i] = updated_task
+            return updated_task
     raise HTTPException(status_code=404, detail="Task not found")
 
 
